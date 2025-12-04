@@ -1,11 +1,62 @@
-# ... (existing imports, pydantic models, and FastAPI setup) ...
+import os
+# NEW: Import SerperDevTool from crewai_tools
+from crewai_tools import SerperDevTool
+from crewai import Agent, Task, Crew, Process
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+from typing import List
+from dotenv import load_dotenv
+from starlette.responses import FileResponse, HTMLResponse
+from contextlib import asynccontextmanager
+
+# Load environment variables (for local testing only)
+load_dotenv()
+
+# --- 1. Pydantic Output Schema for structured data ---
+class Recommendation(BaseModel):
+    """A single product recommendation item."""
+    title: str = Field(description="The product title or a brief description.")
+    price: str = Field(description="The price of the item, including currency.")
+    url: str = Field(description="The direct link to the product page.")
+    source: str = Field(description="The retailer or website the product was found on.")
+
+class CrewOutput(BaseModel):
+    """The final structured output of the Crew."""
+    summary: str = Field(description="A friendly, concise summary explaining the top recommendations.")
+    recommendations: List[Recommendation] = Field(description="A list of the top 3 recommended items.")
+
+# --- 2. FastAPI Setup ---
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup/Shutdown logic
+    print("FastAPI application starting up.")
+    yield
+    print("FastAPI application shutting down.")
+
+app = FastAPI(
+    title="AI Fashion Scout API", 
+    description="CrewAI powered fashion recommendation service.",
+    lifespan=lifespan
+)
+
+class QueryInput(BaseModel):
+    # This query contains the full, combined request from the chatbot's frontend state.
+    query: str = Field(..., description="The user's full fashion request (style, budget, details).")
+
+# --- Frontend Serving Endpoint ---
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def serve_frontend():
+    """Serves the index.html file at the root path."""
+    return FileResponse('index.html')
+
 
 # --- 3. CrewAI Components ---
 
-# Initialize the Search Tool
+# Initialize the Search Tool (Now correctly defined)
 search_tool = SerperDevTool() 
 
-# --- NEW: LLM Setup ---
+# --- LLM Setup ---
 # We define a single LLM configuration using the key we have on Render.
 # We are assuming you are using the 'gemini-2.5-flash' model.
 from crewai.llm import LLM 
@@ -18,11 +69,10 @@ if os.environ.get("GEMINI_API_KEY"):
         "api_key": GEMINI_KEY 
     }
 else:
-    # If GEMINI is not set, we fall back to check for the OpenAI key (as the agent is doing)
-    # The log shows it is looking for OPENAI_API_KEY, so we handle it here:
+    # Fallback logic (This should be unnecessary if GEMINI_API_KEY is set on Render)
     llm_config = {
         "model": "gpt-4o-mini",
-        "api_key": os.environ.get("OPENAI_API_KEY") # This will crash if not found
+        "api_key": os.environ.get("OPENAI_API_KEY") 
     }
 
 # The actual LLM instance
@@ -33,13 +83,12 @@ def run_fashion_scout_crew(query: str) -> dict:
     """Initializes and runs the CrewAI process."""
     
     # 3.1. Define Agents
-    # We now pass the configured 'agent_llm' to each agent explicitly.
     fashion_researcher = Agent(
         role='Search Commander',
         goal=f"Accurately find the top 10 relevant online shopping results for: {query}.",
         backstory="An expert at filtering noise and finding retail links across major e-commerce platforms.",
         tools=[search_tool],
-        llm=agent_llm,  # <-- PASS THE LLM HERE
+        llm=agent_llm, 
         verbose=True,
         allow_delegation=False
     )
@@ -48,14 +97,12 @@ def run_fashion_scout_crew(query: str) -> dict:
         role='Fashion Analyst',
         goal='Analyze search results to find the top 3 items that strictly meet all user-specified criteria.',
         backstory="A meticulous product analyst who filters search data based on constraints and prepares structured recommendations.",
-        llm=agent_llm, # <-- PASS THE LLM HERE
+        llm=agent_llm, 
         verbose=True,
         allow_delegation=False,
         output_json=CrewOutput,
         cache=True 
     )
-
-    # ... (rest of the tasks and crew definition is the same) ...
 
     # 3.2. Define Tasks
     research_task = Task(
@@ -87,3 +134,19 @@ def run_fashion_scout_crew(query: str) -> dict:
     result = fashion_crew.kickoff(inputs={'query': query})
     
     return CrewOutput.model_validate_json(result).model_dump()
+
+
+# --- 4. FastAPI Endpoint ---
+
+@app.post("/recommend_outfit")
+async def recommend_outfit(input: QueryInput):
+    """
+    Triggers the CrewAI Fashion Scout process with the user query.
+    """
+    
+    try:
+        recommendations = run_fashion_scout_crew(input.query)
+        return recommendations
+    except Exception as e:
+        print(f"Error processing query '{input.query}': {e}")
+        raise HTTPException(status_code=500, detail="The AI Agents failed to complete the search.")
