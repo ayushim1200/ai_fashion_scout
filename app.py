@@ -169,8 +169,26 @@ def run_fashion_scout_crew(query: str) -> dict:
     
     result = fashion_crew.kickoff(inputs={'query': query})
     
-    # Since the Analyst output_json is set to CrewOutput, this should parse successfully
-    return CrewOutput.model_validate_json(result).model_dump()
+    # *** FINAL FIX: Extract the raw string from the result before parsing ***
+    if hasattr(result, 'raw'):
+        # If result is a CrewAI object, extract the raw string
+        final_json_string = str(result.raw).strip()
+    elif isinstance(result, str):
+        # If result is already a string (which it should be), clean it up
+        final_json_string = result.strip()
+    else:
+        raise TypeError(f"Crew output format unexpected: {type(result)}. Expected string or Crew object.")
+
+    # Remove markdown code fences if present (e.g., ```json\n...\n```)
+    if final_json_string.startswith("```"):
+        # This handles cases where the LLM wraps the JSON in markdown code blocks
+        import re
+        match = re.search(r"```json\s*(\{[\s\S]*?\})\s*```", final_json_string)
+        if match:
+            final_json_string = match.group(1)
+        
+    # Final validation and return
+    return CrewOutput.model_validate_json(final_json_string).model_dump()
 
 
 # --- 4. FastAPI Endpoint ---
