@@ -56,7 +56,7 @@ async def serve_frontend():
 # Initialize the Search Tool
 search_tool = SerperDevTool() 
 
-# --- LLM Setup (Simplified and Stable) ---
+# --- LLM Setup (Stable) ---
 
 # Check for required environment variables early
 if not os.environ.get("GEMINI_API_KEY") and not os.environ.get("OPENAI_API_KEY"):
@@ -65,19 +65,15 @@ if not os.environ.get("GEMINI_API_KEY") and not os.environ.get("OPENAI_API_KEY")
 # Stable initialization logic:
 if os.environ.get("GEMINI_API_KEY"):
     agent_llm = LLM(
-        # The model name is what CrewAI uses internally to detect the provider
         model="gemini-2.5-flash", 
-        # API key is passed via config.
         config={"api_key": os.environ.get("GEMINI_API_KEY")} 
     )
-# Fallback to OpenAI if only that key is present
 elif os.environ.get("OPENAI_API_KEY"):
     agent_llm = LLM(
         model="gpt-4o-mini",
         config={"api_key": os.environ.get("OPENAI_API_KEY")}
     )
 else:
-    # Should be caught by the ValueError above, but ensures agent_llm is defined.
     raise RuntimeError("LLM configuration failed.")
 
 
@@ -127,7 +123,8 @@ def run_fashion_scout_crew(query: str) -> dict:
         agents=[fashion_researcher, fashion_analyst],
         tasks=[research_task, analysis_task],
         process=Process.sequential,
-        verbose=2
+        # *** THE FIX IS HERE: Changed verbose=2 to verbose=True ***
+        verbose=True
     )
 
     # 3.4. Kickoff the Crew
@@ -151,4 +148,5 @@ async def recommend_outfit(input: QueryInput):
         return recommendations
     except Exception as e:
         print(f"Error processing query '{input.query}': {e}")
+        # Return a generic 500 error to the frontend if the agent fails
         raise HTTPException(status_code=500, detail="The AI Agents failed to complete the search.")
