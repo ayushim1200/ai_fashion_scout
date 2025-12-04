@@ -1,4 +1,10 @@
-crewai
+crewai[google-genai]
+crewai-tools
+fastapi
+uvicorn[standard]
+pydantic
+python-dotenv
+gunicorn
 crewai-tools
 fastapi
 uvicorn[standard]
