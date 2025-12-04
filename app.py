@@ -60,30 +60,65 @@ search_tool = SerperDevTool()
 
 # Check for required environment variables early
 if not os.environ.get("GEMINI_API_KEY") and not os.environ.get("OPENAI_API_KEY"):
-    raise ValueError("FATAL ERROR: Neither GEMINI_API_KEY nor OPENAI_API_KEY is set in environment variables.")
-
-# Stable initialization logic:
-if os.environ.get("GEMINI_API_KEY"):
-    agent_llm = LLM(
-        model="gemini-2.5-flash", 
-        config={"api_key": os.environ.get("GEMINI_API_KEY")} 
-    )
-elif os.environ.get("OPENAI_API_KEY"):
-    agent_llm = LLM(
-        model="gpt-4o-mini",
-        config={"api_key": os.environ.get("OPENAI_API_KEY")}
-    )
+    # If no key is set, the crew cannot run the analysis, but we can still search.
+    agent_llm = None
+    LLM_AVAILABLE = False
 else:
-    raise RuntimeError("LLM configuration failed.")
+    LLM_AVAILABLE = True
+    # Stable initialization logic:
+    if os.environ.get("GEMINI_API_KEY"):
+        agent_llm = LLM(
+            model="gemini-2.5-flash", 
+            config={"api_key": os.environ.get("GEMINI_API_KEY")} 
+        )
+    elif os.environ.get("OPENAI_API_KEY"):
+        agent_llm = LLM(
+            model="gpt-4o-mini",
+            config={"api_key": os.environ.get("OPENAI_API_KEY")}
+        )
+    else:
+        # Should be caught by the check above, but keeps the flow clean
+        agent_llm = None
 
 
 def run_fashion_scout_crew(query: str) -> dict:
     """Initializes and runs the CrewAI process."""
     
+    # --- SOLUTION 1: Skip LLM Analysis if Quota is Hit or Key is Missing ---
+    if not LLM_AVAILABLE:
+        print("--- LLM UNAVAILABLE: Performing Direct Search ---")
+        try:
+            # Execute the search tool directly to get raw results
+            raw_results = search_tool.run(f"online shopping for {query}")
+            
+            # Simple manual parsing (less precise than AI, but fast and avoids LLM quota)
+            import json
+            results = json.loads(raw_results)
+            
+            recommendations = []
+            for item in results.get('organic', [])[:3]:
+                recommendations.append(Recommendation(
+                    title=item.get('title', 'N/A'),
+                    price=item.get('snippet', 'Price not found'),
+                    url=item.get('link', '#'),
+                    source=item.get('source', 'Web Search')
+                ))
+
+            return CrewOutput(
+                summary="Quota exceeded or LLM key missing. Displaying top 3 raw search results (less precise filtering).",
+                recommendations=recommendations
+            ).model_dump()
+            
+        except Exception as e:
+            # If Serper search fails (e.g., SERPER_API_KEY is missing/wrong), raise generic error
+            raise ValueError(f"Search failed. Check SERPER_API_KEY. Error: {e}")
+
+    
+    # --- SOLUTION 2: Full CrewAI (If LLM is Available) ---
+
     # 3.1. Define Agents
     fashion_researcher = Agent(
         role='Search Commander',
-        # MODIFIED: Changed goal to reflect top 5
         goal=f"Accurately find the top 5 relevant online shopping results for: {query}.",
         backstory="An expert at filtering noise and finding retail links across major e-commerce platforms.",
         tools=[search_tool],
@@ -106,7 +141,6 @@ def run_fashion_scout_crew(query: str) -> dict:
     # 3.2. Define Tasks
     research_task = Task(
         description=(
-            # MODIFIED: Changed description to specifically request only 5 results
             f"1. Perform a deep web search for the user request: '{query}'. 2. Compile the top 5 most relevant product titles, prices, URLs, and snippets from the organic search results into a clean markdown list for the Analyst."
         ),
         agent=fashion_researcher,
@@ -151,6 +185,11 @@ async def recommend_outfit(input: QueryInput):
         recommendations = run_fashion_scout_crew(input.query)
         return recommendations
     except Exception as e:
+        # Check if the failure is related to the LLM quota
+        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+            # This allows the frontend to display a cleaner error
+            raise HTTPException(status_code=503, detail="LLM Quota Exceeded. Please wait 5 minutes and try again.")
+        
         print(f"Error processing query '{input.query}': {e}")
-        # Return a generic 500 error to the frontend if the agent fails
+        # Return a generic 500 error for all other issues
         raise HTTPException(status_code=500, detail="The AI Agents failed to complete the search.")
