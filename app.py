@@ -8,8 +8,7 @@ from dotenv import load_dotenv
 from starlette.responses import FileResponse, HTMLResponse
 from contextlib import asynccontextmanager
 
-# Load environment variables (API keys) from .env file
-# NOTE: This only works locally. On Render, keys are provided via environment variables.
+# Load environment variables (for local testing only)
 load_dotenv()
 
 # --- 1. Pydantic Output Schema for structured data ---
@@ -27,13 +26,11 @@ class CrewOutput(BaseModel):
 
 # --- 2. FastAPI Setup ---
 
-# Define the lifespan for startup/shutdown events (optional but good practice)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Initialize any resources here if needed
+    # Startup/Shutdown logic
     print("FastAPI application starting up.")
     yield
-    # Shutdown: Clean up resources here if needed
     print("FastAPI application shutting down.")
 
 app = FastAPI(
@@ -43,19 +40,19 @@ app = FastAPI(
 )
 
 class QueryInput(BaseModel):
-    query: str = Field(..., description="The user's fashion request, e.g., 'black floral dress, midi length, under $100'")
+    # This query contains the full, combined request from the chatbot's frontend state.
+    query: str = Field(..., description="The user's full fashion request (style, budget, details).")
 
 # --- Frontend Serving Endpoint ---
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def serve_frontend():
     """Serves the index.html file at the root path."""
-    # Ensure index.html is copied to the root directory in the Dockerfile
     return FileResponse('index.html')
 
 
 # --- 3. CrewAI Components ---
 
-# Initialize the Search Tool
+# Initialize the Search Tool (Requires SERPER_API_KEY environment variable)
 search_tool = SerperDevTool() 
 
 def run_fashion_scout_crew(query: str) -> dict:
@@ -73,7 +70,7 @@ def run_fashion_scout_crew(query: str) -> dict:
 
     fashion_analyst = Agent(
         role='Fashion Analyst',
-        goal='Analyze search results to find the top 3 items that strictly meet all user-specified criteria (price, style, color, length).',
+        goal='Analyze search results to find the top 3 items that strictly meet all user-specified criteria.',
         backstory="A meticulous product analyst who filters search data based on constraints and prepares structured recommendations.",
         verbose=True,
         allow_delegation=False,
@@ -90,7 +87,7 @@ def run_fashion_scout_crew(query: str) -> dict:
 
     analysis_task = Task(
         description=(
-            f"1. Review the research data provided by the Search Commander. 2. Strictly filter the results to match the user's constraints, which include: '{query}'. 3. Synthesize the final, best 3 matches into the required JSON format."
+            f"1. Review the research data provided by the Search Commander. 2. Strictly filter the results to match the user's constraints from the query: '{query}'. 3. Synthesize the final, best 3 matches into the required JSON format."
         ),
         agent=fashion_analyst,
         context=[research_task], # Analyst relies on Researcher's output
@@ -108,7 +105,6 @@ def run_fashion_scout_crew(query: str) -> dict:
     # 3.4. Kickoff the Crew
     print(f"--- Kicking off crew for query: {query} ---")
     
-    # The kickoff returns the final JSON string from the analysis_task
     result = fashion_crew.kickoff(inputs={'query': query})
     
     # Since the final task enforces a JSON output, we parse and return the data
@@ -124,13 +120,9 @@ async def recommend_outfit(input: QueryInput):
     """
     
     try:
-        # Note: This is synchronous, which can lead to timeouts. For a real production app, 
-        # you would use a job queue (like Celery) or a background task manager.
-        # For a lab setting, this demonstrates the core function.
         recommendations = run_fashion_scout_crew(input.query)
         return recommendations
     except Exception as e:
-        # Log the error and return a 500
         print(f"Error processing query '{input.query}': {e}")
-        # Return a generic error to the frontend
+        # Return a standard HTTP 500 error on agent failure
         raise HTTPException(status_code=500, detail="The AI Agents failed to complete the search.")
