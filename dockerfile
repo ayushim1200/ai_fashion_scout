@@ -1,1 +1,14 @@
-CMD ["gunicorn", "app:app", "--workers", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY app.py .
+COPY index.html .
+
+EXPOSE 8000
+
+# The fixed command to use Uvicorn directly
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
