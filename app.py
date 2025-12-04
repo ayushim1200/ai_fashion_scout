@@ -2,6 +2,8 @@ import os
 # NEW: Import SerperDevTool from crewai_tools
 from crewai_tools import SerperDevTool
 from crewai import Agent, Task, Crew, Process
+# We rely on the base LLM class only
+from crewai.llm import LLM 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import List
@@ -53,61 +55,33 @@ async def serve_frontend():
 
 # --- 3. CrewAI Components ---
 
-# Initialize the Search Tool (Now correctly defined)
+# Initialize the Search Tool
 search_tool = SerperDevTool() 
 
-# --- LLM Setup ---
-# We use a provider-specific import for the Gemini model to ensure the correct class is used.
-from crewai_tools.llms import Gemini as GeminiLLM # Aliasing the import to avoid name conflict with crewai.llm.LLM
-from crewai.llm import LLM # Keep this import for the crew
+# --- LLM Setup (Simplified and Stable) ---
 
-# Define the model to use
-MODEL_NAME = "gemini-2.5-flash"
+# Check for required environment variables early
+if not os.environ.get("GEMINI_API_KEY") and not os.environ.get("OPENAI_API_KEY"):
+    # This will cause a clean crash on startup if no key is found
+    raise ValueError("FATAL ERROR: Neither GEMINI_API_KEY nor OPENAI_API_KEY is set in environment variables.")
 
-# Check for GEMINI_API_KEY first
+# Stable initialization logic:
+# 1. Prioritize Gemini if the key is present.
 if os.environ.get("GEMINI_API_KEY"):
-    GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
-    # Initialize the LLM using the model name and config.
-    # We use a standard provider setup which should work with the environment variable.
-    
-    # NOTE: To use the environment key, the cleanest way is often to use the 
-    # specific class (like GeminiLLM) or pass the parameters directly to the base LLM wrapper.
-    # Let's use the explicit Gemini class for the best stability.
-    
-    # Fallback to the generic LLM wrapper if the specific provider class fails or is not preferred.
-    try:
-        agent_llm = GeminiLLM(
-            model=MODEL_NAME, 
-            api_key=GEMINI_KEY
-        )
-    except ImportError:
-        # If the direct provider import fails, fall back to the generic LLM constructor
-        # and rely on the model name and key being passed explicitly.
-        agent_llm = LLM(
-            model=MODEL_NAME, 
-            config={"api_key": GEMINI_KEY}
-        )
-
-else:
-    # If GEMINI is not set, we fall back to check for the OpenAI key (as the agent was doing)
-    # NOTE: This fallback might still be prone to import errors if the corresponding
-    # OpenAI model library (like `crewai-tools.llms.OpenAI`) isn't available/configured.
-    
-    # Since the system is failing due to LLM initialization, we must ensure the fallback
-    # is also correctly defined or completely removed if only Gemini is intended.
-    # For now, let's prioritize the Gemini path and raise a clean error if keys are missing.
-    if not os.environ.get("OPENAI_API_KEY"):
-        raise ValueError("FATAL ERROR: Neither GEMINI_API_KEY nor OPENAI_API_KEY is set in environment variables.")
-    
-    # If OpenAI key exists (as a safety net)
+    agent_llm = LLM(
+        model="gemini-2.5-flash",
+        # Pass key via config; CrewAI handles the provider detection based on model name
+        config={"api_key": os.environ.get("GEMINI_API_KEY")} 
+    )
+# 2. Fallback to OpenAI if only that key is present (assuming you want this fallback)
+elif os.environ.get("OPENAI_API_KEY"):
     agent_llm = LLM(
         model="gpt-4o-mini",
         config={"api_key": os.environ.get("OPENAI_API_KEY")}
     )
 
-
 def run_fashion_scout_crew(query: str) -> dict:
-# ... (rest of the run_fashion_scout_crew function remains the same)
+    """Initializes and runs the CrewAI process."""
     
     # 3.1. Define Agents
     fashion_researcher = Agent(
