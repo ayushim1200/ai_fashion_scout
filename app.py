@@ -83,7 +83,8 @@ def run_fashion_scout_crew(query: str) -> dict:
     # 3.1. Define Agents
     fashion_researcher = Agent(
         role='Search Commander',
-        goal=f"Accurately find the top 10 relevant online shopping results for: {query}.",
+        # MODIFIED: Changed goal to reflect top 5
+        goal=f"Accurately find the top 5 relevant online shopping results for: {query}.",
         backstory="An expert at filtering noise and finding retail links across major e-commerce platforms.",
         tools=[search_tool],
         llm=agent_llm, 
@@ -93,8 +94,8 @@ def run_fashion_scout_crew(query: str) -> dict:
 
     fashion_analyst = Agent(
         role='Fashion Analyst',
-        goal='Analyze search results to find the top 3 items that strictly meet all user-specified criteria.',
-        backstory="A meticulous product analyst who filters search data based on constraints and prepares structured recommendations.",
+        goal='Select the 3 best products that match the user request based on the provided data, and format the output perfectly.',
+        backstory="A meticulous product analyst focused solely on formatting the final structured recommendations from the raw search data.",
         llm=agent_llm, 
         verbose=True,
         allow_delegation=False,
@@ -104,14 +105,17 @@ def run_fashion_scout_crew(query: str) -> dict:
 
     # 3.2. Define Tasks
     research_task = Task(
-        description=f"1. Perform a deep web search for the user request: '{query}'. 2. Compile all relevant product titles, prices, URLs, and snippets into a clean markdown list for the Analyst.",
+        description=(
+            # MODIFIED: Changed description to specifically request only 5 results
+            f"1. Perform a deep web search for the user request: '{query}'. 2. Compile the top 5 most relevant product titles, prices, URLs, and snippets from the organic search results into a clean markdown list for the Analyst."
+        ),
         agent=fashion_researcher,
-        expected_output="A clean, structured markdown list of at least 10 relevant product listings (Title, Price, URL, Source Snippet)."
+        expected_output="A clean, structured markdown list of the top 5 relevant product listings (Title, Price, URL, Source Snippet)."
     )
 
     analysis_task = Task(
         description=(
-            f"1. Review the research data provided by the Search Commander. 2. Strictly filter the results to match the user's constraints from the query: '{query}'. 3. Synthesize the final, best 3 matches into the required JSON format."
+            f"Review the list of search results. Select the 3 items that most closely match the user's request: '{query}'. For each selected item, extract the Title, Price, URL, and Source (website name) and package the final result into the required JSON schema. The summary must be friendly and confirm the search criteria."
         ),
         agent=fashion_analyst,
         context=[research_task],
@@ -123,8 +127,7 @@ def run_fashion_scout_crew(query: str) -> dict:
         agents=[fashion_researcher, fashion_analyst],
         tasks=[research_task, analysis_task],
         process=Process.sequential,
-        # *** THE FIX IS HERE: Changed verbose=2 to verbose=True ***
-        verbose=True
+        verbose=True 
     )
 
     # 3.4. Kickoff the Crew
@@ -132,6 +135,7 @@ def run_fashion_scout_crew(query: str) -> dict:
     
     result = fashion_crew.kickoff(inputs={'query': query})
     
+    # Since the Analyst output_json is set to CrewOutput, this should parse successfully
     return CrewOutput.model_validate_json(result).model_dump()
 
 
