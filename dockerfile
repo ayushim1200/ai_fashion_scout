@@ -5,11 +5,10 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Copy the requirements file and install dependencies
-# Now includes gunicorn!
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code
+# Copy the rest of the application code (backend and frontend HTML)
 COPY app.py .
 COPY index.html .
 
@@ -17,5 +16,5 @@ COPY index.html .
 EXPOSE 8000
 
 # Command to run the application using Gunicorn (production server)
-# Gunicorn will be found and executed correctly now.
+# This command is read and executed by Render.
 CMD ["gunicorn", "app:app", "--workers", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
