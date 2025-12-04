@@ -10,48 +10,48 @@
         /* Updated Styles for a Boutique/Wardrobe Aesthetic */
         body { 
             font-family: 'Inter', sans-serif; 
-            background-color: #fcfcfc; /* Soft, light background */
+            background-color: #fcfcfc; 
         }
         .chat-container { 
             max-width: 900px; 
             margin: 50px auto; 
-            padding: 30px; /* More padding */
+            padding: 30px; 
             background: #ffffff; 
             border-radius: 20px; 
-            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.15); /* Premium, prominent shadow */
-            border: 1px solid #e0e0e0; /* Subtle edge definition */
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.15); 
+            border: 1px solid #e0e0e0; 
         }
         .message { 
             padding: 12px 18px; 
             margin-bottom: 15px; 
-            border-radius: 18px; /* Softer, more rounded corners */
+            border-radius: 18px; 
             max-width: 80%; 
             font-size: 0.95rem;
         }
         .user-message { 
-            background-color: #e6f7ff; /* Light, soft blue for user */
+            background-color: #e6f7ff; 
             margin-left: auto; 
             text-align: right; 
         }
         .assistant-message { 
-            background-color: #fff8e1; /* Light cream/gold for assistant */
-            border: 1px solid #f9e79f; /* Subtle gold accent border */
+            background-color: #fff8e1; 
+            border: 1px solid #f9e79f; 
             text-align: left; 
         }
-        /* Recommendation Cards - Look like high-end product tags or framed items */
+        /* Recommendation Cards */
         .recommendation-card { 
-            border: 2px solid #2563eb; /* Deep sapphire border */
-            border-left: 5px solid #2563eb; /* Stronger accent on the left */
+            border: 2px solid #2563eb; 
+            border-left: 5px solid #2563eb; 
             transition: all 0.3s ease; 
             background-color: #f7f9fd; 
         }
         .recommendation-card:hover { 
             transform: translateY(-3px); 
-            box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2); /* Sapphire hover shadow */
+            box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2); 
         }
         .loader { 
             border: 4px solid #f3f3f3; 
-            border-top: 4px solid #2563eb; /* Sapphire loader */
+            border-top: 4px solid #2563eb; 
             border-radius: 50%; 
             width: 20px; 
             height: 20px; 
@@ -65,25 +65,22 @@
 
     <div id="app" class="chat-container">
         <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">
-            <span class="text-blue-600">👗</span> AI Fashion Scout
+            <span class="text-blue-600">👗</span> AI Fashion Scout Chatbot
         </h1>
-        <p class="text-center text-gray-500 mb-8">Let our CrewAI agents search for the perfect outfit for you.</p>
+        <p class="text-center text-gray-500 mb-8">Let our CrewAI agents conduct a multi-step search for you.</p>
         
         <!-- Chat History -->
         <div id="chat-history" class="h-[400px] overflow-y-auto mb-6 p-4 border border-gray-200 rounded-xl bg-gray-50">
-            <!-- Initial Message from Assistant -->
-            <div class="message assistant-message">
-                Hello! I'm your AI Fashion Scout. Tell me what you're looking for! (e.g., "black floral dress, midi length, under $100")
-            </div>
+            <!-- Initial Message will be injected by JavaScript -->
         </div>
 
         <!-- Input Form -->
         <form id="chat-form" class="flex gap-4">
-            <input type="text" id="user-query" placeholder="Type your outfit request here..." 
+            <input type="text" id="user-query" placeholder="Type your response here..." 
                    class="flex-grow p-3 border border-gray-300 rounded-xl focus:ring-blue-500 focus:border-blue-500" required>
             <button type="submit" id="submit-button" 
                     class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-xl transition duration-200 shadow-lg disabled:bg-gray-400">
-                Search
+                Send
             </button>
         </form>
 
@@ -102,12 +99,30 @@
             const submitButton = document.getElementById('submit-button');
             const statusMessage = document.getElementById('status-message');
             
-            // NOTE: Replace this with your actual deployed FastAPI endpoint
-            const API_ENDPOINT = 'YOUR_DEPLOYED_FASTAPI_ENDPOINT/recommend_outfit';
-            // Since this is a lab environment, we'll use a mock response function
-            const USE_MOCK_API = true; 
+            // --- Conversational State Machine Setup ---
+            const STATES = {
+                INIT: 'INIT',
+                AWAITING_STYLE: 'AWAITING_STYLE',
+                AWAITING_BUDGET: 'AWAITING_BUDGET',
+                AWAITING_DETAILS: 'AWAITING_DETAILS',
+                READY_TO_SEARCH: 'READY_TO_SEARCH',
+                SEARCHING: 'SEARCHING'
+            };
 
-            // Function to add a message to the chat history
+            let chatState = STATES.INIT;
+            let queryDetails = {
+                style: '',
+                budget: '',
+                details: ''
+            };
+            
+            // Configuration
+            // NOTE: REPLACE THIS WITH YOUR RENDER URL AFTER DEPLOYMENT
+            const API_ENDPOINT = 'YOUR_RENDER_URL/recommend_outfit';
+            const IS_LIVE_DEPLOYED = false; // Set to TRUE after Render deployment is LIVE
+
+            // --- Utility Functions ---
+
             function addMessage(sender, text, recommendations = []) {
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `message ${sender}-message`;
@@ -119,7 +134,6 @@
                     
                     recommendations.forEach((item, index) => {
                         const card = document.createElement('div');
-                        // Note: Tailwind classes adjusted for the new look
                         card.className = 'recommendation-card p-4 rounded-xl bg-white shadow-md'; 
                         card.innerHTML = `
                             <p class="text-xs font-semibold text-blue-600 mb-1">RECOMMENDATION #${index + 1}</p>
@@ -137,38 +151,90 @@
                 }
                 
                 chatHistory.appendChild(messageDiv);
-                chatHistory.scrollTop = chatHistory.scrollHeight; // Auto-scroll to bottom
+                chatHistory.scrollTop = chatHistory.scrollHeight;
             }
 
-            // MOCK API FUNCTION (Simulates the CrewAI process)
+            function assistantResponse(text) {
+                addMessage('assistant', text);
+            }
+            
+            // --- Conversational Logic ---
+
+            function startConversation() {
+                assistantResponse("Hello! I'm your AI Fashion Scout. I'm doing well, thank you for asking! Let's find you the perfect look.");
+                setTimeout(() => {
+                    assistantResponse("To start, what kind of style or item are you looking for? (e.g., 'a formal dress', 'casual pants', 'summer blouse')");
+                    chatState = STATES.AWAITING_STYLE;
+                }, 1000);
+            }
+
+            function handleConversation(input) {
+                switch (chatState) {
+                    case STATES.AWAITING_STYLE:
+                        queryDetails.style = input;
+                        assistantResponse(`Got it! We are looking for: **${input}**. Now, what is your budget for this item? (e.g., 'under $150', 'around $75')`);
+                        chatState = STATES.AWAITING_BUDGET;
+                        break;
+
+                    case STATES.AWAITING_BUDGET:
+                        queryDetails.budget = input;
+                        assistantResponse(`Understood! We'll keep the price around **${input}**. Finally, please tell me about the color, material, or any specific details. (e.g., 'black floral, midi length, silk', or just 'blue')`);
+                        chatState = STATES.AWAITING_DETAILS;
+                        break;
+
+                    case STATES.AWAITING_DETAILS:
+                        queryDetails.details = input;
+                        
+                        const finalQuery = `${queryDetails.details}, ${queryDetails.style}, ${queryDetails.budget}`;
+
+                        assistantResponse(`Perfect! I have all the details. I will now ask my CrewAI agents to search the web for the best match: **${finalQuery}**`);
+                        
+                        chatState = STATES.READY_TO_SEARCH;
+                        // Immediately trigger the search now that we have the full query
+                        triggerCrewAISearch(finalQuery);
+                        break;
+                        
+                    case STATES.READY_TO_SEARCH:
+                    case STATES.SEARCHING:
+                        assistantResponse("I am already working on your request. Please wait while the agents collaborate and find the perfect outfit!");
+                        break;
+                    
+                    default:
+                        assistantResponse("Please refresh to start a new consultation.");
+                        break;
+                }
+            }
+            
+            // MOCK API FUNCTION (For local testing before full deployment)
             async function mockCrewAICall(query) {
-                // Simulate network delay and agent collaboration time
                 statusMessage.classList.remove('hidden');
-                await new Promise(resolve => setTimeout(resolve, 3500)); 
-
-                statusMessage.classList.add('hidden');
-
-                // Mock structured response (what your FastAPI/CrewAI endpoint should return)
+                // Simulate network delay and agent collaboration time
+                await new Promise(resolve => setTimeout(resolve, 5000)); 
+                
+                const style = queryDetails.style || 'dress';
+                const price = queryDetails.budget || '$100';
+                
+                // Mock structured response based on the conversation flow
                 const mockResponse = {
-                    summary: `Based on your request for a **black floral midi dress under $100**, the Fashion Analyst and Search Commander agents have collaborated to find these top three options. They meet all your criteria for style and price point!`,
+                    summary: `The Fashion Scout Crew has completed the search for your request: **${query}**. Here are the top 3 recommendations that best match your style and budget.`,
                     recommendations: [
                         {
-                            title: "Lace Trim Black Floral Print Midi Dress",
-                            price: "$79.99",
-                            url: "https://example.com/dress-lace-trim",
-                            source: "TrendyThreads.com"
+                            title: `Elegant ${style} with detailed trim`,
+                            price: `$${(parseInt(price.replace(/[^0-9]/g, '')) * 0.9).toFixed(2)}`,
+                            url: "https://mock.com/product/1",
+                            source: "LuxuryOnlineBoutique.com"
                         },
                         {
-                            title: "Vintage V-Neck Black Floral Dress (Under $100)",
-                            price: "$95.50",
-                            url: "https://example.com/dress-vintage-vneck",
-                            source: "EleganceRetail.com"
+                            title: `Casual ${style} - great value!`,
+                            price: `$${(parseInt(price.replace(/[^0-9]/g, '')) * 0.75).toFixed(2)}`,
+                            url: "https://mock.com/product/2",
+                            source: "EverydayWear.net"
                         },
                         {
-                            title: "Flowy Black and Red Floral Midi Dress",
-                            price: "$65.00",
-                            url: "https://example.com/dress-flowy-red",
-                            source: "BargainBoutique.net"
+                            title: `Sophisticated ${style} for events`,
+                            price: `$${(parseInt(price.replace(/[^0-9]/g, '')) * 0.99).toFixed(2)}`,
+                            url: "https://mock.com/product/3",
+                            source: "TheFormalEdit.com"
                         },
                     ]
                 };
@@ -176,23 +242,19 @@
                 return mockResponse;
             }
 
-            // Handle form submission
-            chatForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const query = userQueryInput.value.trim();
-                if (!query) return;
-
-                // 1. Display user message
-                addMessage('user', query);
-                userQueryInput.value = '';
+            // --- CrewAI Search Trigger ---
+            async function triggerCrewAISearch(query) {
+                chatState = STATES.SEARCHING;
                 submitButton.disabled = true;
+                userQueryInput.disabled = true;
 
                 try {
                     let result;
-                    if (USE_MOCK_API) {
+                    if (!IS_LIVE_DEPLOYED) {
+                        // Use Mock API for quick testing
                         result = await mockCrewAICall(query);
                     } else {
-                        // 2. Call the actual FastAPI endpoint
+                        // Use actual deployed FastAPI endpoint
                         statusMessage.classList.remove('hidden');
                         const response = await fetch(API_ENDPOINT, {
                             method: 'POST',
@@ -207,17 +269,36 @@
                         result = await response.json();
                     }
 
-                    // 3. Display AI response with structured recommendations
+                    // Display final structured recommendation
                     addMessage('assistant', result.summary, result.recommendations);
+                    assistantResponse("I have finished the search! If you'd like to find another outfit, please refresh the page to start a new consultation.");
                     
                 } catch (error) {
                     console.error('Error during CrewAI execution:', error);
-                    addMessage('assistant', `⚠️ Sorry, an error occurred during the search: ${error.message}. Please check the console for details, or verify the backend service is running.`);
+                    addMessage('assistant', `⚠️ Sorry, the search failed: ${error.message}. Please check your deployed API status and logs.`);
                 } finally {
-                    submitButton.disabled = false;
                     statusMessage.classList.add('hidden');
+                    // We keep the button/input disabled since the conversation is "over"
                 }
+            }
+
+
+            // Handle form submission (drives the conversation)
+            chatForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const input = userQueryInput.value.trim();
+                if (!input || chatState === STATES.SEARCHING) return;
+
+                // 1. Display user message
+                addMessage('user', input);
+                userQueryInput.value = '';
+
+                // 2. Handle conversation turn
+                handleConversation(input);
             });
+            
+            // Start the chat!
+            startConversation();
         });
     </script>
 </body>
