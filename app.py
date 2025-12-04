@@ -1,16 +1,18 @@
 import os
 from crewai import Agent, Task, Crew, Process
-from crewai_tools import SerperDevTool # Tool for general web search
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from crewai_tools import SerperDevTool
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import List
 from dotenv import load_dotenv
+from starlette.responses import FileResponse, HTMLResponse
+from contextlib import asynccontextmanager
 
 # Load environment variables (API keys) from .env file
+# NOTE: This only works locally. On Render, keys are provided via environment variables.
 load_dotenv()
 
 # --- 1. Pydantic Output Schema for structured data ---
-# This ensures the output is predictable and easy for the frontend to parse.
 class Recommendation(BaseModel):
     """A single product recommendation item."""
     title: str = Field(description="The product title or a brief description.")
@@ -24,10 +26,32 @@ class CrewOutput(BaseModel):
     recommendations: List[Recommendation] = Field(description="A list of the top 3 recommended items.")
 
 # --- 2. FastAPI Setup ---
-app = FastAPI(title="AI Fashion Scout API", description="CrewAI powered fashion recommendation service.")
+
+# Define the lifespan for startup/shutdown events (optional but good practice)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Initialize any resources here if needed
+    print("FastAPI application starting up.")
+    yield
+    # Shutdown: Clean up resources here if needed
+    print("FastAPI application shutting down.")
+
+app = FastAPI(
+    title="AI Fashion Scout API", 
+    description="CrewAI powered fashion recommendation service.",
+    lifespan=lifespan
+)
 
 class QueryInput(BaseModel):
     query: str = Field(..., description="The user's fashion request, e.g., 'black floral dress, midi length, under $100'")
+
+# --- Frontend Serving Endpoint ---
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def serve_frontend():
+    """Serves the index.html file at the root path."""
+    # Ensure index.html is copied to the root directory in the Dockerfile
+    return FileResponse('index.html')
+
 
 # --- 3. CrewAI Components ---
 
@@ -87,29 +111,26 @@ def run_fashion_scout_crew(query: str) -> dict:
     # The kickoff returns the final JSON string from the analysis_task
     result = fashion_crew.kickoff(inputs={'query': query})
     
-    # Since the final task enforces a JSON output, we return the parsed result
+    # Since the final task enforces a JSON output, we parse and return the data
     return CrewOutput.model_validate_json(result).model_dump()
 
 
 # --- 4. FastAPI Endpoint ---
 
 @app.post("/recommend_outfit")
-async def recommend_outfit(input: QueryInput, background_tasks: BackgroundTasks):
+async def recommend_outfit(input: QueryInput):
     """
     Triggers the CrewAI Fashion Scout process with the user query.
-    Note: For long-running tasks, you'd typically use a proper queue like Celery 
-    or return a Job ID for polling, but this synchronous call demonstrates the core concept.
     """
     
-    # Run the crew and return the result
     try:
-        # Note: CrewAI is synchronous, so this call will block the thread
-        # In production, use background task processing or async LLM clients.
+        # Note: This is synchronous, which can lead to timeouts. For a real production app, 
+        # you would use a job queue (like Celery) or a background task manager.
+        # For a lab setting, this demonstrates the core function.
         recommendations = run_fashion_scout_crew(input.query)
         return recommendations
     except Exception as e:
         # Log the error and return a 500
         print(f"Error processing query '{input.query}': {e}")
-        raise HTTPException(status_code=500, detail=f"AI Agent failed to complete the task: {e}")
-
-# Example command to run locally: uvicorn app:app --reload --port 8000
+        # Return a generic error to the frontend
+        raise HTTPException(status_code=500, detail="The AI Agents failed to complete the search.")
