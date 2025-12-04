@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Fashion Scout Chatbot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Updated Styles for a Boutique/Wardrobe Aesthetic */
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: #fcfcfc; /* Soft, light background */
+        }
+        .chat-container { 
+            max-width: 900px; 
+            margin: 50px auto; 
+            padding: 30px; /* More padding */
+            background: #ffffff; 
+            border-radius: 20px; 
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.15); /* Premium, prominent shadow */
+            border: 1px solid #e0e0e0; /* Subtle edge definition */
+        }
+        .message { 
+            padding: 12px 18px; 
+            margin-bottom: 15px; 
+            border-radius: 18px; /* Softer, more rounded corners */
+            max-width: 80%; 
+            font-size: 0.95rem;
+        }
+        .user-message { 
+            background-color: #e6f7ff; /* Light, soft blue for user */
+            margin-left: auto; 
+            text-align: right; 
+        }
+        .assistant-message { 
+            background-color: #fff8e1; /* Light cream/gold for assistant */
+            border: 1px solid #f9e79f; /* Subtle gold accent border */
+            text-align: left; 
+        }
+        /* Recommendation Cards - Look like high-end product tags or framed items */
+        .recommendation-card { 
+            border: 2px solid #2563eb; /* Deep sapphire border */
+            border-left: 5px solid #2563eb; /* Stronger accent on the left */
+            transition: all 0.3s ease; 
+            background-color: #f7f9fd; 
+        }
+        .recommendation-card:hover { 
+            transform: translateY(-3px); 
+            box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2); /* Sapphire hover shadow */
+        }
+        .loader { 
+            border: 4px solid #f3f3f3; 
+            border-top: 4px solid #2563eb; /* Sapphire loader */
+            border-radius: 50%; 
+            width: 20px; 
+            height: 20px; 
+            animation: spin 2s linear infinite; 
+            display: inline-block; 
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
+
+    <div id="app" class="chat-container">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">
+            <span class="text-blue-600">👗</span> AI Fashion Scout
+        </h1>
+        <p class="text-center text-gray-500 mb-8">Let our CrewAI agents search for the perfect outfit for you.</p>
+        
+        <!-- Chat History -->
+        <div id="chat-history" class="h-[400px] overflow-y-auto mb-6 p-4 border border-gray-200 rounded-xl bg-gray-50">
+            <!-- Initial Message from Assistant -->
+            <div class="message assistant-message">
+                Hello! I'm your AI Fashion Scout. Tell me what you're looking for! (e.g., "black floral dress, midi length, under $100")
+            </div>
+        </div>
+
+        <!-- Input Form -->
+        <form id="chat-form" class="flex gap-4">
+            <input type="text" id="user-query" placeholder="Type your outfit request here..." 
+                   class="flex-grow p-3 border border-gray-300 rounded-xl focus:ring-blue-500 focus:border-blue-500" required>
+            <button type="submit" id="submit-button" 
+                    class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-xl transition duration-200 shadow-lg disabled:bg-gray-400">
+                Search
+            </button>
+        </form>
+
+        <!-- Loading & Status Message -->
+        <div id="status-message" class="mt-4 text-center text-sm text-gray-600 hidden">
+            <div class="loader mr-2"></div>
+            Searching the web with CrewAI... This may take up to a minute as agents collaborate.
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const chatHistory = document.getElementById('chat-history');
+            const chatForm = document.getElementById('chat-form');
+            const userQueryInput = document.getElementById('user-query');
+            const submitButton = document.getElementById('submit-button');
+            const statusMessage = document.getElementById('status-message');
+            
+            // NOTE: Replace this with your actual deployed FastAPI endpoint
+            const API_ENDPOINT = 'YOUR_DEPLOYED_FASTAPI_ENDPOINT/recommend_outfit';
+            // Since this is a lab environment, we'll use a mock response function
+            const USE_MOCK_API = true; 
+
+            // Function to add a message to the chat history
+            function addMessage(sender, text, recommendations = []) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${sender}-message`;
+                messageDiv.innerHTML = `<p class="font-medium">${text}</p>`;
+
+                if (recommendations.length > 0) {
+                    const recsContainer = document.createElement('div');
+                    recsContainer.className = 'mt-4 space-y-3';
+                    
+                    recommendations.forEach((item, index) => {
+                        const card = document.createElement('div');
+                        // Note: Tailwind classes adjusted for the new look
+                        card.className = 'recommendation-card p-4 rounded-xl bg-white shadow-md'; 
+                        card.innerHTML = `
+                            <p class="text-xs font-semibold text-blue-600 mb-1">RECOMMENDATION #${index + 1}</p>
+                            <h3 class="font-bold text-gray-800">${item.title}</h3>
+                            <p class="text-lg font-mono text-gray-900 mt-1">${item.price}</p>
+                            <p class="text-sm text-gray-600 mt-2">Source: ${item.source}</p>
+                            <a href="${item.url}" target="_blank" 
+                               class="inline-block mt-3 text-sm text-blue-600 hover:text-blue-800 font-medium">
+                                View Product &rarr;
+                            </a>
+                        `;
+                        recsContainer.appendChild(card);
+                    });
+                    messageDiv.appendChild(recsContainer);
+                }
+                
+                chatHistory.appendChild(messageDiv);
+                chatHistory.scrollTop = chatHistory.scrollHeight; // Auto-scroll to bottom
+            }
+
+            // MOCK API FUNCTION (Simulates the CrewAI process)
+            async function mockCrewAICall(query) {
+                // Simulate network delay and agent collaboration time
+                statusMessage.classList.remove('hidden');
+                await new Promise(resolve => setTimeout(resolve, 3500)); 
+
+                statusMessage.classList.add('hidden');
+
+                // Mock structured response (what your FastAPI/CrewAI endpoint should return)
+                const mockResponse = {
+                    summary: `Based on your request for a **black floral midi dress under $100**, the Fashion Analyst and Search Commander agents have collaborated to find these top three options. They meet all your criteria for style and price point!`,
+                    recommendations: [
+                        {
+                            title: "Lace Trim Black Floral Print Midi Dress",
+                            price: "$79.99",
+                            url: "https://example.com/dress-lace-trim",
+                            source: "TrendyThreads.com"
+                        },
+                        {
+                            title: "Vintage V-Neck Black Floral Dress (Under $100)",
+                            price: "$95.50",
+                            url: "https://example.com/dress-vintage-vneck",
+                            source: "EleganceRetail.com"
+                        },
+                        {
+                            title: "Flowy Black and Red Floral Midi Dress",
+                            price: "$65.00",
+                            url: "https://example.com/dress-flowy-red",
+                            source: "BargainBoutique.net"
+                        },
+                    ]
+                };
+
+                return mockResponse;
+            }
+
+            // Handle form submission
+            chatForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const query = userQueryInput.value.trim();
+                if (!query) return;
+
+                // 1. Display user message
+                addMessage('user', query);
+                userQueryInput.value = '';
+                submitButton.disabled = true;
+
+                try {
+                    let result;
+                    if (USE_MOCK_API) {
+                        result = await mockCrewAICall(query);
+                    } else {
+                        // 2. Call the actual FastAPI endpoint
+                        statusMessage.classList.remove('hidden');
+                        const response = await fetch(API_ENDPOINT, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ query: query })
+                        });
+
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+
+                        result = await response.json();
+                    }
+
+                    // 3. Display AI response with structured recommendations
+                    addMessage('assistant', result.summary, result.recommendations);
+                    
+                } catch (error) {
+                    console.error('Error during CrewAI execution:', error);
+                    addMessage('assistant', `⚠️ Sorry, an error occurred during the search: ${error.message}. Please check the console for details, or verify the backend service is running.`);
+                } finally {
+                    submitButton.disabled = false;
+                    statusMessage.classList.add('hidden');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
