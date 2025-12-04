@@ -1,8 +1,7 @@
 import os
-# NEW: Import SerperDevTool from crewai_tools
+# --- Core Imports ---
 from crewai_tools import SerperDevTool
 from crewai import Agent, Task, Crew, Process
-# We rely on the base LLM class only
 from crewai.llm import LLM 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -43,7 +42,6 @@ app = FastAPI(
 )
 
 class QueryInput(BaseModel):
-    # This query contains the full, combined request from the chatbot's frontend state.
     query: str = Field(..., description="The user's full fashion request (style, budget, details).")
 
 # --- Frontend Serving Endpoint ---
@@ -62,23 +60,26 @@ search_tool = SerperDevTool()
 
 # Check for required environment variables early
 if not os.environ.get("GEMINI_API_KEY") and not os.environ.get("OPENAI_API_KEY"):
-    # This will cause a clean crash on startup if no key is found
     raise ValueError("FATAL ERROR: Neither GEMINI_API_KEY nor OPENAI_API_KEY is set in environment variables.")
 
 # Stable initialization logic:
-# 1. Prioritize Gemini if the key is present.
 if os.environ.get("GEMINI_API_KEY"):
     agent_llm = LLM(
-        model="gemini-2.5-flash",
-        # Pass key via config; CrewAI handles the provider detection based on model name
+        # The model name is what CrewAI uses internally to detect the provider
+        model="gemini-2.5-flash", 
+        # API key is passed via config.
         config={"api_key": os.environ.get("GEMINI_API_KEY")} 
     )
-# 2. Fallback to OpenAI if only that key is present (assuming you want this fallback)
+# Fallback to OpenAI if only that key is present
 elif os.environ.get("OPENAI_API_KEY"):
     agent_llm = LLM(
         model="gpt-4o-mini",
         config={"api_key": os.environ.get("OPENAI_API_KEY")}
     )
+else:
+    # Should be caught by the ValueError above, but ensures agent_llm is defined.
+    raise RuntimeError("LLM configuration failed.")
+
 
 def run_fashion_scout_crew(query: str) -> dict:
     """Initializes and runs the CrewAI process."""
