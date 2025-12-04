@@ -117,9 +117,9 @@
             };
             
             // Configuration
-            // NOTE: REPLACE THIS WITH YOUR RENDER URL AFTER DEPLOYMENT
+            // NOTE: REPLACE 'YOUR_RENDER_URL' WITH YOUR ACTUAL LIVE DOMAIN (e.g., https://ai-fashion-scout-xyz.onrender.com)
             const API_ENDPOINT = 'YOUR_RENDER_URL/recommend_outfit';
-            const IS_LIVE_DEPLOYED = false; // Set to TRUE after Render deployment is LIVE
+            const IS_LIVE_DEPLOYED = true; // CHANGED to TRUE to use the live API!
 
             // --- Utility Functions ---
 
@@ -205,42 +205,7 @@
                 }
             }
             
-            // MOCK API FUNCTION (For local testing before full deployment)
-            async function mockCrewAICall(query) {
-                statusMessage.classList.remove('hidden');
-                // Simulate network delay and agent collaboration time
-                await new Promise(resolve => setTimeout(resolve, 5000)); 
-                
-                const style = queryDetails.style || 'dress';
-                const price = queryDetails.budget || '$100';
-                
-                // Mock structured response based on the conversation flow
-                const mockResponse = {
-                    summary: `The Fashion Scout Crew has completed the search for your request: **${query}**. Here are the top 3 recommendations that best match your style and budget.`,
-                    recommendations: [
-                        {
-                            title: `Elegant ${style} with detailed trim`,
-                            price: `$${(parseInt(price.replace(/[^0-9]/g, '')) * 0.9).toFixed(2)}`,
-                            url: "https://mock.com/product/1",
-                            source: "LuxuryOnlineBoutique.com"
-                        },
-                        {
-                            title: `Casual ${style} - great value!`,
-                            price: `$${(parseInt(price.replace(/[^0-9]/g, '')) * 0.75).toFixed(2)}`,
-                            url: "https://mock.com/product/2",
-                            source: "EverydayWear.net"
-                        },
-                        {
-                            title: `Sophisticated ${style} for events`,
-                            price: `$${(parseInt(price.replace(/[^0-9]/g, '')) * 0.99).toFixed(2)}`,
-                            url: "https://mock.com/product/3",
-                            source: "TheFormalEdit.com"
-                        },
-                    ]
-                };
-
-                return mockResponse;
-            }
+            // MOCK API FUNCTION (Removed since IS_LIVE_DEPLOYED is TRUE)
 
             // --- CrewAI Search Trigger ---
             async function triggerCrewAISearch(query) {
@@ -251,19 +216,36 @@
                 try {
                     let result;
                     if (!IS_LIVE_DEPLOYED) {
-                        // Use Mock API for quick testing
-                        result = await mockCrewAICall(query);
+                        // This branch is now effectively unreachable as IS_LIVE_DEPLOYED is true
+                        console.error("Should be calling live API, but IS_LIVE_DEPLOYED is false.");
+                        return;
                     } else {
                         // Use actual deployed FastAPI endpoint
                         statusMessage.classList.remove('hidden');
-                        const response = await fetch(API_ENDPOINT, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ query: query })
-                        });
+                        
+                        // Fetch request with exponential backoff for robustness
+                        const maxRetries = 5;
+                        let delay = 1000;
+                        let response = null;
 
-                        if (!response.ok) {
-                            throw new Error(`HTTP error! status: ${response.status}`);
+                        for (let i = 0; i < maxRetries; i++) {
+                            try {
+                                response = await fetch(API_ENDPOINT, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ query: query })
+                                });
+                                if (response.ok) break; 
+                            } catch (error) {
+                                // Log the error internally but don't show to user yet
+                                console.error(`Fetch attempt ${i + 1} failed. Retrying in ${delay}ms...`);
+                            }
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                            delay *= 2; // Exponential backoff
+                        }
+                        
+                        if (!response || !response.ok) {
+                            throw new Error(`Failed to connect to the backend API after ${maxRetries} attempts.`);
                         }
 
                         result = await response.json();
@@ -275,10 +257,9 @@
                     
                 } catch (error) {
                     console.error('Error during CrewAI execution:', error);
-                    addMessage('assistant', `⚠️ Sorry, the search failed: ${error.message}. Please check your deployed API status and logs.`);
+                    addMessage('assistant', `⚠️ Sorry, the search failed: ${error.message}. Please check your deployed API status, your **SERPER_API_KEY** on Render, and refresh to try again.`);
                 } finally {
                     statusMessage.classList.add('hidden');
-                    // We keep the button/input disabled since the conversation is "over"
                 }
             }
 
